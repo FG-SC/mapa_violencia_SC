@@ -5,3 +5,4 @@ geopandas
 scipy
 folium
 openpyxl
+statsmodels
