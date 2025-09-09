@@ -55,7 +55,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(
-    page_title="🔍 Análise de Violência contra a Mulher - SC",
+    page_title="📊 Análise de Violência contra a Mulher - SC",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -471,234 +471,6 @@ def standardize_education(education):
             return value
     
     return education_clean.title()
-
-def create_race_analysis(df):
-    """Create race/ethnicity analysis from q26 responses"""
-    race_columns = ['q26_0', 'q26_1', 'q26_2', 'q26_3', 'q26_4']
-    race_labels = {
-        'q26_0': 'Branca',
-        'q26_1': 'Preta', 
-        'q26_2': 'Parda',
-        'q26_3': 'Amarela',
-        'q26_4': 'Indígena'
-    }
-    
-    # Check if race columns exist
-    existing_cols = [col for col in race_columns if col in df.columns]
-    if not existing_cols:
-        return None, None
-    
-    # Calculate race distribution
-    race_counts = {}
-    for col in existing_cols:
-        if col in df.columns:
-            count = df[col].sum() if df[col].dtype in ['int64', 'float64'] else len(df[df[col] == 1])
-            race_counts[race_labels[col]] = count
-    
-    # Create DataFrame
-    race_df = pd.DataFrame(list(race_counts.items()), columns=['Raça/Cor', 'Quantidade'])
-    race_df['Porcentagem'] = (race_df['Quantidade'] / race_df['Quantidade'].sum() * 100).round(2)
-    race_df = race_df.sort_values('Quantidade', ascending=False)
-    
-    # Create visualization
-    fig = px.bar(
-        race_df,
-        x='Raça/Cor',
-        y='Quantidade',
-        title='📊 Distribuição por Raça/Cor das Vítimas',
-        color='Raça/Cor',
-        color_discrete_map={
-            'Branca': '#3498db',
-            'Preta': '#e74c3c',
-            'Parda': '#f39c12',
-            'Amarela': '#f1c40f',
-            'Indígena': '#27ae60'
-        },
-        text='Quantidade'
-    )
-    
-    fig.update_traces(texttemplate='%{text}', textposition='outside')
-    fig.update_layout(height=500, showlegend=False)
-    
-    return fig, race_df
-
-def create_questionnaire_response_table(df):
-    """Create multi-index table for questionnaire responses"""
-    # Get all question columns
-    q_columns = [col for col in df.columns if col.startswith('q') and '_' in col and not col.startswith('q26')]
-    
-    if not q_columns:
-        return None
-    
-    # Create response summary
-    response_data = []
-    
-    for col in sorted(q_columns):
-        if col in df.columns:
-            # Count responses
-            if df[col].dtype in ['int64', 'float64', 'bool']:
-                # For numeric columns, sum the values (assuming 1 = yes, 0 = no)
-                count = int(df[col].sum())
-            else:
-                # For other types, count non-null values
-                count = int(df[col].notna().sum())
-            
-            total = len(df)
-            percentage = (count / total * 100) if total > 0 else 0
-            
-            # Extract question and option number
-            parts = col.split('_')
-            if len(parts) >= 2:
-                question = parts[0]
-                option = parts[1]
-                
-                response_data.append({
-                    'Pergunta': question,
-                    'Alternativa': option,
-                    'N': count,
-                    '%': round(percentage, 1)
-                })
-    
-    if not response_data:
-        return None
-    
-    # Create DataFrame
-    response_df = pd.DataFrame(response_data)
-    
-    # Create multi-index
-    response_df_indexed = response_df.set_index(['Pergunta', 'Alternativa'])
-    
-    return response_df_indexed
-
-def analyze_psychological_indicators(df):
-    """Analyze q34 and q35 for psychological indicators"""
-    results = {}
-    
-    # Analyze q34 - Physical and emotional presentation
-    if 'q34' in df.columns:
-        q34_data = df['q34'].value_counts()
-        
-        fig_q34 = px.bar(
-            x=q34_data.index[:10],  # Top 10 responses
-            y=q34_data.values[:10],
-            title='📊 Q34: Apresentação Física e Emocional das Vítimas',
-            labels={'x': 'Resposta', 'y': 'Frequência'},
-            color_discrete_sequence=['#e74c3c']
-        )
-        fig_q34.update_xaxes(tickangle=45)
-        fig_q34.update_layout(height=500)
-        
-        results['q34'] = {'fig': fig_q34, 'data': q34_data}
-    
-    # Analyze q35 - Suicide risk
-    if 'q35' in df.columns:
-        q35_data = df['q35'].value_counts()
-        
-        fig_q35 = px.bar(
-            x=q35_data.index,
-            y=q35_data.values,
-            title='📊 Q35: Risco de Tentativa de Suicídio',
-            labels={'x': 'Resposta', 'y': 'Frequência'},
-            color_discrete_sequence=['#c0392b']
-        )
-        fig_q35.update_layout(height=400)
-        
-        results['q35'] = {'fig': fig_q35, 'data': q35_data}
-    
-    return results
-
-def create_risk_score_analysis(df):
-    """Create risk score based on multiple indicators"""
-    risk_factors = {
-        'q1_0': 3,  # Threat with firearm
-        'q1_1': 2,  # Threat with knife
-        'q2_4': 3,  # Shot
-        'q2_6': 3,  # Stabbed
-        'q35': 5    # Suicide risk
-    }
-    
-    # Calculate risk score for each case
-    df['risk_score'] = 0
-    
-    for factor, weight in risk_factors.items():
-        if factor in df.columns:
-            if df[factor].dtype in ['int64', 'float64']:
-                df['risk_score'] += df[factor] * weight
-            else:
-                df['risk_score'] += (df[factor] == 1).astype(int) * weight
-    
-    # Categorize risk levels
-    df['risk_level'] = pd.cut(
-        df['risk_score'],
-        bins=[-1, 2, 5, 10, 100],
-        labels=['Baixo', 'Médio', 'Alto', 'Extremo']
-    )
-    
-    # Create visualization
-    risk_counts = df['risk_level'].value_counts()
-    
-    fig = px.pie(
-        values=risk_counts.values,
-        names=risk_counts.index,
-        title='📊 Distribuição por Nível de Risco',
-        color_discrete_map={
-            'Baixo': '#27ae60',
-            'Médio': '#f39c12',
-            'Alto': '#e67e22',
-            'Extremo': '#c0392b'
-        }
-    )
-    
-    return fig, df[['risk_score', 'risk_level']]
-    """Analyze correlation between education level and crime occurrences"""
-    if 'Escolaridade - Agressor' not in df.columns or 'Tipo penal' not in df.columns:
-        return None, None
-    
-    # Define education level ordering (lower number = lower education)
-    education_levels = {
-        'Não Alfabetizado': 1,
-        'Alfabetizado': 2,
-        'Fundamental Incompleto': 3,
-        'Fundamental Completo': 4,
-        'Médio Incompleto': 5,
-        'Médio Completo': 6,
-        'Superior Incompleto': 7,
-        'Superior Completo': 8,
-        'Pós-graduação': 9
-    }
-    
-    # Clean data
-    df_clean = df.dropna(subset=['Escolaridade - Agressor'])
-    df_clean = df_clean[df_clean['Escolaridade - Agressor'] != 'Não Informado']
-    
-    # Map education to numeric levels
-    df_clean['Education_Level'] = df_clean['Escolaridade - Agressor'].map(education_levels)
-    df_clean = df_clean.dropna(subset=['Education_Level'])
-    
-    # Count crimes by education level
-    crime_counts = df_clean.groupby(['Education_Level', 'Escolaridade - Agressor']).size().reset_index(name='Crime_Count')
-    
-    # Calculate correlation
-    if len(crime_counts) > 1:
-        correlation, p_value = stats.pearsonr(crime_counts['Education_Level'], crime_counts['Crime_Count'])
-    else:
-        correlation, p_value = 0, 1
-    
-    # Create visualization
-    fig = px.scatter(
-        crime_counts,
-        x='Education_Level',
-        y='Crime_Count',
-        text='Escolaridade - Agressor',
-        title=f'📊 Correlação: Nível de Escolaridade vs Ocorrência de Crimes<br>Correlação de Pearson: {correlation:.3f} (p-valor: {p_value:.3f})',
-        labels={'Education_Level': 'Nível de Escolaridade (1=Menor, 9=Maior)', 'Crime_Count': 'Número de Crimes'},
-        trendline='ols'
-    )
-    
-    fig.update_traces(textposition='top center', marker=dict(size=12, color='red'))
-    fig.update_layout(height=600)
-    
-    return fig, {'correlation': correlation, 'p_value': p_value, 'data': crime_counts}
 
 def create_education_correlation_heatmap(df):
     """Create heatmap showing correlation between victim and aggressor education levels"""
@@ -1188,7 +960,7 @@ def create_demographic_pyramid(df):
     ))
     
     fig.update_layout(
-        title="🔍 Pirâmide Etária: Vítimas vs Agressores",
+        title="📊 Pirâmide Etária: Vítimas vs Agressores",
         title_font_size=16,
         xaxis_title="Número de Casos",
         yaxis_title="Faixa Etária",
@@ -1587,45 +1359,27 @@ def export_to_excel(data, filename, sheet_name='Dados'):
     return output
 
 def main():
-    st.markdown('<h1 class="main-header">🔍 Análise de Violência contra a Mulher - Santa Catarina</h1>', 
+    st.markdown('<h1 class="main-header">📊 Análise de Violência contra a Mulher - Santa Catarina</h1>', 
                 unsafe_allow_html=True)
     
-    # Sidebar
-    st.sidebar.header('📁 Configurações')
-    
-    # File upload
-    uploaded_file = st.sidebar.file_uploader(
-        "📊 Carregar arquivo Excel",
-        type=['xlsx', 'xls'],
-        help="Faça upload do arquivo scmulherextracao2025.xlsx"
-    )
-    
-    # Use local file option
-    use_local_file = st.sidebar.checkbox("🔗 Usar arquivo local")
-    local_file_path = None
-    
-    if use_local_file:
-        local_file_path = st.sidebar.text_input(
-            "Caminho do arquivo:",
-            value="scmulher-extracao-2025.xlsx"
-        )
-    
-    # Load data
-    with st.spinner('🔄 Carregando e processando dados...'):
-        df = load_and_process_data(uploaded_file, local_file_path if use_local_file else None)
+    # Load data automatically
+    with st.spinner('📄 Carregando e processando dados...'):
+        df = load_and_process_data(file_path='scmulher-extracao-2025.xlsx')
     
     if df is None:
         st.markdown("""
         <div class="warning-box">
             <h3>⚠️ Dados não carregados</h3>
-            <p>Por favor, carregue um arquivo Excel para começar a análise.</p>
-            <p>Use a barra lateral para fazer upload do arquivo ou especificar o caminho local.</p>
+            <p>Por favor, verifique se o arquivo 'scmulher-extracao-2025.xlsx' está no mesmo diretório do script.</p>
         </div>
         """, unsafe_allow_html=True)
         st.stop()
     
     # Generate analytics summary
     analytics = create_advanced_analytics_summary(df)
+    
+    # Sidebar for filters
+    st.sidebar.header('🔍 Filtros Avançados')
     
     # Overview metrics
     st.markdown('<div class="success-box"><h3>📊 Visão Geral do Dataset</h3></div>', 
@@ -1646,7 +1400,7 @@ def main():
     
     with col2:
         st.metric(
-            "🏘️ Municípios", 
+            "🏙️ Municípios", 
             analytics['unique_municipalities'],
             help="Número de municípios com registros"
         )
@@ -1680,9 +1434,6 @@ def main():
             )
         else:
             st.metric("📍 Região Mais Afetada", "N/A")
-    
-    # Filters
-    st.sidebar.header('🔍 Filtros Avançados')
     
     # Date filter
     if 'Data do registro' in df.columns and df['Data do registro'].notna().any():
@@ -1745,13 +1496,12 @@ def main():
         st.stop()
     
     # Main analysis tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         '🏠 Home', 
         '👥 Demografia', 
         '📅 Padrões Temporais', 
         '🔗 Relacionamentos',
-        '🗺️ Análise Geográfica',
-        '📋 Análise Questionário'
+        '🗺️ Análise Geográfica'
     ])
     
     with tab1:
@@ -1889,23 +1639,11 @@ def main():
         else:
             st.info("Dados de idade insuficientes para a pirâmide demográfica")
         
-        # Race/Ethnicity analysis
-        st.subheader('🌍 Análise por Raça/Cor')
-        race_fig, race_data = create_race_analysis(filtered_df)
-        if race_fig:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.plotly_chart(race_fig, use_container_width=True)
-            with col2:
-                st.dataframe(race_data, use_container_width=True)
-        else:
-            st.info("Dados de raça/cor não disponíveis (q26)")
-        
         # Nationality analysis (if not all Brazilian)
         if 'Nacionalidade - mulher' in filtered_df.columns:
             nationality_counts = filtered_df['Nacionalidade - mulher'].value_counts()
             if len(nationality_counts) > 1 or (len(nationality_counts) == 1 and nationality_counts.index[0] != 'Brasileira'):
-                st.subheader('🌐 Análise por Nacionalidade')
+                st.subheader('🌍 Análise por Nacionalidade')
                 col1, col2 = st.columns([2, 1])
                 with col1:
                     fig_nat = px.bar(
@@ -2109,7 +1847,7 @@ def main():
                 st.dataframe(display_meso, use_container_width=True)
         
         # Interactive map with hover
-        st.subheader('🌐 Mapa Interativo Mesorregiões com Hover')
+        st.subheader('🌍 Mapa Interativo Mesorregiões com Hover')
         folium_map = create_folium_map(filtered_df, selected_crime)
         if folium_map:
             folium_html = folium_map._repr_html_()
@@ -2134,142 +1872,6 @@ def main():
                 'Porcentagem': (muni_counts.values / len(df_muni) * 100).round(2)
             })
             st.dataframe(muni_df, use_container_width=True)
-    
-    with tab6:
-        st.header('📋 Análise do Questionário FNAV')
-        
-        # Response frequency table
-        st.subheader('📊 Frequência de Respostas por Pergunta')
-        
-        response_table = create_questionnaire_response_table(filtered_df)
-        if response_table is not None and len(response_table) > 0:
-            st.markdown("""
-            <div class="insight-box">
-                <h4>📋 Como interpretar esta tabela</h4>
-                <p>• <b>Pergunta</b>: Número da questão (q1, q2, etc.)</p>
-                <p>• <b>Alternativa</b>: Opção selecionada (0, 1, 2, etc.)</p>
-                <p>• <b>N</b>: Número absoluto de respostas</p>
-                <p>• <b>%</b>: Percentual em relação ao total de respondentes</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Display table with proper formatting
-            st.dataframe(
-                response_table.style.format({
-                    'N': '{:,}',
-                    '%': '{:.1f}%'
-                }),
-                use_container_width=True,
-                height=400
-            )
-            
-            # Export option
-            if st.button("📥 Exportar Tabela de Respostas", key="export_responses"):
-                excel_data = export_to_excel(response_table, 'respostas_questionario.xlsx', 'Respostas')
-                if excel_data:
-                    st.download_button(
-                        label="⬇️ Download Excel - Respostas",
-                        data=excel_data,
-                        file_name=f"respostas_questionario_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-        else:
-            st.info("Dados de questionário não disponíveis")
-        
-        # Psychological indicators analysis
-        st.subheader('🧠 Indicadores Psicológicos')
-        
-        psych_results = analyze_psychological_indicators(filtered_df)
-        
-        # Q34 Analysis
-        if 'q34' in psych_results:
-            st.markdown("""
-            <div class="warning-box">
-                <h4>Q34: Apresentação Física e Emocional</h4>
-                <p>Esta questão avalia sinais de esgotamento emocional, uso de medicação controlada 
-                e necessidade de acompanhamento psicológico/psiquiátrico.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.plotly_chart(psych_results['q34']['fig'], use_container_width=True)
-        
-        # Q35 Analysis
-        if 'q35' in psych_results:
-            st.markdown("""
-            <div class="warning-box">
-                <h4>Q35: Risco de Suicídio</h4>
-                <p>Esta questão aborda ideação ou tentativa suicida, critério essencial de risco extremo.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.plotly_chart(psych_results['q35']['fig'], use_container_width=True)
-            
-            # Show statistics
-            if 'data' in psych_results['q35']:
-                data = psych_results['q35']['data']
-                if len(data) > 0:
-                    risk_cases = data.get('Sim', 0) if 'Sim' in data.index else 0
-                    total_cases = data.sum()
-                    risk_percentage = (risk_cases / total_cases * 100) if total_cases > 0 else 0
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("⚠️ Casos com Risco", f"{risk_cases:,}")
-                    with col2:
-                        st.metric("📊 Total Avaliado", f"{total_cases:,}")
-                    with col3:
-                        st.metric("📈 Percentual de Risco", f"{risk_percentage:.1f}%")
-        
-        # Risk Score Analysis
-        st.subheader('⚡ Análise de Escore de Risco')
-        
-        risk_fig, risk_data = create_risk_score_analysis(filtered_df.copy())
-        if risk_fig:
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.plotly_chart(risk_fig, use_container_width=True)
-            
-            with col2:
-                st.markdown("""
-                <div class="insight-box">
-                    <h4>🎯 Fatores de Risco Considerados</h4>
-                    <ul>
-                        <li>Ameaça com arma de fogo (peso: 3)</li>
-                        <li>Ameaça com faca (peso: 2)</li>
-                        <li>Tiro (peso: 3)</li>
-                        <li>Facada (peso: 3)</li>
-                        <li>Risco de suicídio (peso: 5)</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Risk level distribution
-                if 'risk_level' in risk_data.columns:
-                    risk_dist = risk_data['risk_level'].value_counts()
-                    risk_df = pd.DataFrame({
-                        'Nível': risk_dist.index,
-                        'Casos': risk_dist.values,
-                        '%': (risk_dist.values / len(risk_data) * 100).round(1)
-                    })
-                    st.dataframe(risk_df, use_container_width=True)
-        else:
-            st.info("Dados insuficientes para calcular escore de risco")
-        
-        # Correlation with sociodemographic data
-        st.subheader('🔗 Correlação com Dados Sociodemográficos')
-        
-        st.markdown("""
-        <div class="insight-box">
-            <h4>📊 Análises Disponíveis</h4>
-            <p>• Cruzamento de indicadores de risco com idade das vítimas</p>
-            <p>• Relação entre escolaridade e presença de fatores de risco</p>
-            <p>• Distribuição geográfica dos casos de alto risco</p>
-            <p>• Padrões de reincidência e evolução do risco</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Additional analyses can be added here based on specific requirements
     
     # Download options
     st.sidebar.header('📥 Downloads')
