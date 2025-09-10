@@ -242,137 +242,116 @@ def get_mesoregion(municipality):
         return 'Outras Regiões'
 
 def create_multi_index_summary_table(df):
-    """Create comprehensive multi-index summary table like the printed image"""
     if len(df) == 0:
         return None, None
     
-    # Define crime categories based on Categorias.xlsx
     crime_categories = {
         'Violência Física': ['Lesão Corporal', 'Homicídio', 'Agressão', 'Tentativa De Homicídio'],
         'Violência Psicológica': ['Ameaça', 'Perseguição', 'Constrangimento Ilegal', 'Perturbação Da Tranquilidade'],
         'Violência Moral': ['Injúria', 'Difamação', 'Calúnia'],
         'Violência Sexual': ['Estupro', 'Importunação Sexual', 'Assédio Sexual', 'Violação Sexual'],
-        'Violência Econômica/Patrimonial': ['Dano', 'Furto', 'Roubo', 'Apropriação Indébita', 'Estelionato'],
         'Feminicídio': ['Feminicídio', 'Tentativa De Feminicídio'],
-        'Múltiplas Dimensões (Outros)': []  # Will include remaining crimes
+    }
+    all_crimes = df['Tipo penal'].dropna().unique().tolist()
+    assigned_crimes = [crime for sublist in crime_categories.values() for crime in sublist]
+    crime_categories['Outros'] = [c for c in all_crimes if c not in assigned_crimes and c != 'Não Informado']
+
+    sort_orders = {
+        'Escolaridade': ['Não Alfabetizado', 'Alfabetizado', 'Fundamental Incompleto', 'Fundamental Completo', 'Médio Incompleto', 'Médio Completo', 'Superior Incompleto', 'Superior Completo', 'Pós-graduação'],
+        'Faixa etária': ['0 - 12', '13 - 17', '18 - 29', '30 - 39', '40 - 49', '50 - 59', '60 - 69', '70 - 79', '80 - 89', '90 - 99', '100 +'],
+        'Faixa etária - Agressor': ['0 - 19', '20 - 29', '30 - 39', '40 - 49', '50 - 59', '60 +'],
+        'Raça/Cor - Vítima': ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena']
     }
     
-    # Get all unique crimes in the dataset
-    all_crimes = df['Tipo penal'].dropna().unique().tolist()
-    
-    # Assign remaining crimes to 'Múltiplas Dimensões (Outros)'
-    assigned_crimes = []
-    for crimes in crime_categories.values():
-        assigned_crimes.extend(crimes)
-    
-    crime_categories['Múltiplas Dimensões (Outros)'] = [crime for crime in all_crimes if crime not in assigned_crimes and crime != 'Não Informado']
-    
-    # Function to create age groups
-    def create_age_groups(age_series):
+        
+    # Helper function for age grouping
+    def create_age_groups(age_series, group_type='victim'):
         if age_series.isna().all():
             return pd.Series(['Não Informado'] * len(age_series), index=age_series.index)
         
-        age_groups = pd.cut(age_series, 
-                     bins=[0, 4, 9, 14, 19, 29, 39, 49, 59, 69, 100],
-                     labels=['0 a 4 anos', '5 a 9 anos', '10 a 14 anos', '15 a 19 anos',
-                            '20 a 29 anos', '30 a 39 anos', '40 a 49 anos', '50 a 59 anos',
-                            '60 a 69 anos', '70 anos ou mais'],
-                     include_lowest=True)
+        if group_type == 'victim':
+            bins = [0, 12, 17, 29, 39, 49, 59, 69, 79, 89, 99, 150]
+            labels = ['0 - 12', '13 - 17', '18 - 29', '30 - 39', '40 - 49', '50 - 59', '60 - 69', '70 - 79', '80 - 89', '90 - 99', '100 +']
+        else:
+            bins = [0, 19, 29, 39, 49, 59, 150]
+            labels = ['0 - 19', '20 - 29', '30 - 39', '40 - 49', '50 - 59', '60 +']
         
-        age_groups_str = age_groups.astype(str).replace('nan', 'Não Informado')
-        return age_groups_str
-    
-    # Prepare the summary sections
-    all_sections = []
-    
-    # Map categories to process
+        age_groups = pd.cut(age_series, bins=bins, labels=labels, include_lowest=True)
+        return age_groups.astype(str).replace('nan', 'Não Informado')
+
     categories_to_process = [
-        ('Faixa etária', 'idade - mulher', create_age_groups),
+        ('Faixa etária', 'idade - mulher', lambda x: create_age_groups(x, 'victim')),
+        ('Raça/Cor - Vítima', 'Raça/Cor - Vítima', None),
+        ('Faixa etária - Agressor', 'idade - agressor', lambda x: create_age_groups(x, 'agressor')),
         ('Vínculo', 'Vínculo', None),
         ('Escolaridade', 'Escolaridade - mulher', None),
         ('Regiões', 'Mesorregião', None)
     ]
-    
+
+    all_sections = []
     for category_name, col_name, transform_func in categories_to_process:
         if col_name not in df.columns:
             continue
             
         df_temp = df.copy()
         
-        # Apply transformation if needed
         if transform_func:
             df_temp['_category'] = transform_func(df_temp[col_name])
         else:
             df_temp['_category'] = df_temp[col_name]
         
-        # Remove invalid entries
-        df_temp = df_temp.dropna(subset=['_category'])
-        df_temp = df_temp[df_temp['_category'] != 'Não Informado']
-        
-        # Get unique values
+        df_temp = df_temp[df_temp['_category'] != 'Não Informado'].dropna(subset=['_category'])
         unique_values = df_temp['_category'].value_counts().index.tolist()
-        if category_name == 'Vínculo':
-            unique_values = unique_values[:10]  # Top 10 relationships
-        elif category_name == 'Escolaridade':
-            unique_values = unique_values[:8]  # Top 8 education levels
         
-        # Process each subcategory
+        if category_name in sort_orders:
+            ordered = [v for v in sort_orders[category_name] if v in unique_values]
+            remaining = sorted([v for v in unique_values if v not in ordered])
+            unique_values = ordered + remaining
+        else:
+            unique_values = sorted(unique_values)
+
         for subcategory in unique_values:
-            subcategory_data = df_temp[df_temp['_category'] == subcategory]
-            
-            if len(subcategory_data) == 0:
-                continue
-            
+            sub_df = df_temp[df_temp['_category'] == subcategory]
+            total_cases = len(sub_df)
+            if total_cases == 0: continue
+
             row_data = {}
-            total_cases = len(subcategory_data)
-            
-            # Calculate for each crime category
             for crime_cat, crimes in crime_categories.items():
-                if crimes:
-                    crime_cases = len(subcategory_data[subcategory_data['Tipo penal'].isin(crimes)])
-                    row_data[f'{crime_cat}_N'] = crime_cases
-                    row_data[f'{crime_cat}_%'] = round((crime_cases / total_cases * 100), 1) if total_cases > 0 else 0.0
+                crime_cases = len(sub_df[sub_df['Tipo penal'].isin(crimes)])
+                row_data[f'{crime_cat}_N'] = crime_cases
+                row_data[f'{crime_cat}_%'] = (crime_cases / total_cases * 100) if total_cases > 0 else 0
             
             row_data['Total_N'] = total_cases
-            row_data['Total_%'] = 100.0
             
-            all_sections.append({
-                'Categoria': category_name,
-                'Subcategoria': str(subcategory),
-                **row_data
-            })
-    
+            all_sections.append({'Categoria': category_name, 'Subcategoria': str(subcategory), **row_data})
+
     if not all_sections:
         return None, None
     
-    # Create DataFrame
-    summary_df = pd.DataFrame(all_sections)
+    summary_df = pd.DataFrame(all_sections).set_index(['Categoria', 'Subcategoria'])
     
-    # Set up multi-index
-    summary_df_indexed = summary_df.set_index(['Categoria', 'Subcategoria'])
+    column_tuples = []
+    for cat in crime_categories.keys():
+        column_tuples.append((cat, 'N'))
+        column_tuples.append((cat, '%'))
+    column_tuples.append(('Total', 'N'))
+
+    final_cols = pd.MultiIndex.from_tuples(column_tuples)
     
-    # Create column structure
-    column_data = []
-    column_names = []
-    
-    for crime_cat in crime_categories.keys():
-        if f'{crime_cat}_N' in summary_df.columns:
-            column_data.extend([f'{crime_cat}_N', f'{crime_cat}_%'])
-            column_names.extend([(crime_cat, 'N'), (crime_cat, '%')])
-    
-    column_data.extend(['Total_N', 'Total_%'])
-    column_names.extend([('Total', 'N'), ('Total', '%')])
-    
-    # Reorder and rename columns
-    summary_df_final = summary_df_indexed[column_data]
-    summary_df_final.columns = pd.MultiIndex.from_tuples(column_names)
-    
-    # Convert N columns to integers
-    for col in summary_df_final.columns:
+    summary_final = pd.DataFrame(columns=final_cols, index=summary_df.index)
+
+    for cat in crime_categories.keys():
+        summary_final[(cat, 'N')] = summary_df[f'{cat}_N']
+        summary_final[(cat, '%')] = summary_df[f'{cat}_%']
+    summary_final[('Total', 'N')] = summary_df['Total_N']
+
+    for col in summary_final.columns:
         if col[1] == 'N':
-            summary_df_final[col] = summary_df_final[col].fillna(0).astype(int)
-    
-    return summary_df, summary_df_final
+            summary_final[col] = summary_final[col].fillna(0).astype(int)
+        else:
+            summary_final[col] = summary_final[col].fillna(0)
+
+    return summary_df.reset_index(), summary_final
 
 def create_mesoregion_choropleth(df, selected_crime='Todos os Crimes'):
     """Create choropleth map by mesoregions"""
@@ -540,7 +519,7 @@ def create_municipality_heatmap(df, selected_crime='Todos os Crimes'):
     muni_counts.columns = ['Município', 'Casos']
     
     # Create base map
-    center_lat, center_lon = -27.2423, -50.2189
+    center_lat, center_lon = -29.2423, -50.2189
     m = folium.Map(
         location=[center_lat, center_lon], 
         zoom_start=7, 
@@ -1273,7 +1252,7 @@ def create_folium_map(df, selected_crime='Todos os Crimes'):
     meso_counts.columns = ['Mesorregião', 'Casos']
     
     # Create base map centered on Santa Catarina
-    center_lat, center_lon = -27.2423, -50.2189
+    center_lat, center_lon = -29.2423, -50.2189
     m = folium.Map(location=[center_lat, center_lon], zoom_start=7, tiles='OpenStreetMap')
     
     # Define mesoregion approximate centers
@@ -1638,29 +1617,6 @@ def main():
             st.plotly_chart(pyramid_fig, use_container_width=True)
         else:
             st.info("Dados de idade insuficientes para a pirâmide demográfica")
-        
-        # Nationality analysis (if not all Brazilian)
-        if 'Nacionalidade - mulher' in filtered_df.columns:
-            nationality_counts = filtered_df['Nacionalidade - mulher'].value_counts()
-            if len(nationality_counts) > 1 or (len(nationality_counts) == 1 and nationality_counts.index[0] != 'Brasileira'):
-                st.subheader('🌍 Análise por Nacionalidade')
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    fig_nat = px.bar(
-                        x=nationality_counts.index,
-                        y=nationality_counts.values,
-                        title='Nacionalidade das Vítimas',
-                        labels={'x': 'Nacionalidade', 'y': 'Quantidade'},
-                        color_discrete_sequence=['#3498db']
-                    )
-                    st.plotly_chart(fig_nat, use_container_width=True)
-                with col2:
-                    nat_df = pd.DataFrame({
-                        'Nacionalidade': nationality_counts.index,
-                        'Quantidade': nationality_counts.values,
-                        '%': (nationality_counts.values / len(filtered_df) * 100).round(1)
-                    })
-                    st.dataframe(nat_df, use_container_width=True)
         
         # Education comparison
         edu_fig = create_education_comparison_enhanced(filtered_df)
