@@ -87,7 +87,7 @@ def load_data():
     """
     try:
         # Carrega o arquivo CSV
-        df = pd.read_csv('dados_processados_final.csv', index_col=0)
+        df = pd.read_parquet('dados_processados_final.parquet')
         
         # Aplique a função à coluna para a conversão
         df['data_nascimento_agressor'] = pd.to_datetime(df['data_nascimento_agressor'], format='%d-%m-%Y')
@@ -1411,3 +1411,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
